@@ -19,12 +19,21 @@ raw = urllib.request.urlopen(req, timeout=120).read()
 if raw[:2] == b"\x1f\x8b":
     raw = gzip.decompress(raw)
 
-names, order, out = {}, [], {d.isoformat(): {} for d in days}
+names, logos, order, out = {}, {}, [], {d.isoformat(): {} for d in days}
+
+def img_of(el):
+    # image en https uniquement (le tableau de bord est sécurisé)
+    ic = el.find("icon")
+    src = (ic.get("src") or "").strip() if ic is not None else ""
+    if src.startswith("http://"):
+        src = "https://" + src[7:]
+    return src if src.startswith("https://") else ""
 for _, el in ET.iterparse(io.BytesIO(raw), events=("end",)):
     if el.tag == "channel":
         cid = el.get("id")
         dn = el.findtext("display-name") or cid
         names[cid] = dn.strip()
+        logos[cid] = img_of(el)
         order.append(cid)
         el.clear()
     elif el.tag == "programme":
@@ -42,12 +51,13 @@ for _, el in ET.iterparse(io.BytesIO(raw), events=("end",)):
                 "sub": (el.findtext("sub-title") or "").strip()[:80],
                 "cat": (el.findtext("category") or "").strip(),
                 "desc": desc[:280] + ("…" if len(desc) > 280 else ""),
+                "img": img_of(el),
             })
         el.clear()
 
 result = {"generated": now.isoformat(timespec="minutes"), "source": "xmltvfr.fr", "days": {}}
 for key, chans in out.items():
-    result["days"][key] = [{"name": names.get(cid, cid), "programs": sorted(chans[cid], key=lambda p: p["start"])}
+    result["days"][key] = [{"name": names.get(cid, cid), "logo": logos.get(cid, ""), "programs": sorted(chans[cid], key=lambda p: p["start"])}
                            for cid in order if cid in chans]
 with open("tv.json", "w", encoding="utf-8") as f:
     json.dump(result, f, ensure_ascii=False, separators=(",", ":"))
